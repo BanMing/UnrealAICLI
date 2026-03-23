@@ -53,7 +53,7 @@ void SChatMessage::Construct(const FArguments& InArgs)
 		? FLinearColor(0.4f, 0.6f, 1.0f)   // Light blue
 		: FLinearColor(0.9f, 0.6f, 0.3f);  // Warm orange
 
-	FString RoleLabel = bIsUser ? TEXT("> You") : TEXT("Claude");
+	FString RoleLabel = bIsUser ? TEXT("> You") : TEXT("Assistant");
 
 	ChildSlot
 	[
@@ -163,18 +163,27 @@ void SClaudeEditorWidget::Construct(const FArguments& InArgs)
 		]
 	];
 	
-	// Check Claude availability on startup
+	// Check provider availability on startup
 	if (!IsClaudeAvailable())
 	{
-		AddMessage(TEXT("⚠️ Claude CLI not found.\n\nPlease install Claude Code:\n  npm install -g @anthropic-ai/claude-code\n\nThen authenticate:\n  claude auth login"), false);
+		if (FClaudeCodeRunner::IsMCPOnlyMode())
+		{
+			AddMessage(TEXT("MCP-only mode enabled. Chat provider is disabled; only MCP server features are active."), false);
+		}
+		else
+		{
+			AddMessage(FString::Printf(TEXT("%s CLI not found.\n\nInstall:\n  %s\n\nThen authenticate:\n  %s"),
+				*FClaudeCodeRunner::GetConfiguredProviderName(),
+				*FClaudeCodeRunner::GetConfiguredProviderInstallHint(),
+				*FClaudeCodeRunner::GetConfiguredProviderLoginHint()), false);
+		}
 	}
 	else
 	{
-		FString WelcomeMessage = TEXT("👋 Welcome to Unreal Claude!\n\nI'm ready to help with your UE5.7 project. Ask me about:\n• C++ code patterns and best practices\n• Blueprint integration\n• Engine systems (Nanite, Lumen, GAS, etc.)\n• Debugging and optimization\n\n");
-
-		// Add MCP tool status
+		FString WelcomeMessage = FString::Printf(TEXT("Welcome to Unreal Claude.\n\nProvider: %s\n\nI am ready to help with your UE5.7 project."),
+			*FClaudeCodeRunner::GetConfiguredProviderName());
+		WelcomeMessage += TEXT("\n\n");
 		WelcomeMessage += GenerateMCPStatusMessage();
-
 		WelcomeMessage += TEXT("\nType your question below and press Enter or click Send.");
 		AddMessage(WelcomeMessage, false);
 	}
@@ -329,7 +338,16 @@ void SClaudeEditorWidget::SendMessage()
 
 	if (!IsClaudeAvailable())
 	{
-		AddMessage(TEXT("Claude CLI is not available. Please install it first."), false);
+		if (FClaudeCodeRunner::IsMCPOnlyMode())
+		{
+			AddMessage(TEXT("MCP-only mode enabled. Chat provider is disabled."), false);
+		}
+		else
+		{
+			AddMessage(FString::Printf(TEXT("%s CLI is not available. Install: %s"),
+				*FClaudeCodeRunner::GetConfiguredProviderName(),
+				*FClaudeCodeRunner::GetConfiguredProviderInstallHint()), false);
+		}
 		return;
 	}
 
@@ -525,7 +543,7 @@ void SClaudeEditorWidget::NewSession()
 
 bool SClaudeEditorWidget::IsClaudeAvailable() const
 {
-	return FClaudeCodeRunner::IsClaudeAvailable();
+	return FClaudeCodeRunner::IsConfiguredProviderAvailable();
 }
 
 FText SClaudeEditorWidget::GetStatusText() const
@@ -533,7 +551,7 @@ FText SClaudeEditorWidget::GetStatusText() const
 	if (bIsWaitingForResponse)
 	{
 		double ElapsedSec = FPlatformTime::Seconds() - StreamingStartTime;
-		FString StatusStr = FString::Printf(TEXT("● Claude is thinking... %.1fs"), ElapsedSec);
+		FString StatusStr = FString::Printf(TEXT("�� AI is thinking... %.1fs"), ElapsedSec);
 
 		if (StreamingToolCallCount > 0)
 		{
@@ -546,15 +564,19 @@ FText SClaudeEditorWidget::GetStatusText() const
 
 	if (!IsClaudeAvailable())
 	{
-		return LOCTEXT("StatusUnavailable", "● Claude CLI not found");
+		if (FClaudeCodeRunner::IsMCPOnlyMode())
+		{
+			return LOCTEXT("StatusMCPOnly", "�� MCP-only mode");
+		}
+		return FText::FromString(FString::Printf(TEXT("�� %s CLI not found"), *FClaudeCodeRunner::GetConfiguredProviderName()));
 	}
 
 	if (!LastResultStats.IsEmpty())
 	{
-		return FText::FromString(FString::Printf(TEXT("● %s"), *LastResultStats));
+		return FText::FromString(FString::Printf(TEXT("�� %s"), *LastResultStats));
 	}
 
-	return LOCTEXT("StatusReady", "● Ready");
+	return LOCTEXT("StatusReady", "�� Ready");
 }
 
 FSlateColor SClaudeEditorWidget::GetStatusColor() const
@@ -980,7 +1002,7 @@ void SClaudeEditorWidget::HandleToolResultEvent(const FClaudeStreamEvent& Event)
 	TSharedPtr<STextBlock>* StatusLabelPtr = ToolCallStatusLabels.Find(Event.ToolCallId);
 	if (StatusLabelPtr && StatusLabelPtr->IsValid())
 	{
-		(*StatusLabelPtr)->SetText(FText::FromString(FString::Printf(TEXT("✓ %s completed"), *ToolName)));
+		(*StatusLabelPtr)->SetText(FText::FromString(FString::Printf(TEXT("[done] %s completed"), *ToolName)));
 		(*StatusLabelPtr)->SetColorAndOpacity(FSlateColor(FLinearColor(0.3f, 0.75f, 0.3f)));
 	}
 
@@ -1065,7 +1087,7 @@ FString SClaudeEditorWidget::GetDisplayToolName(const FString& FullToolName)
 {
 	FString Name = FullToolName;
 	// Strip common MCP server prefix for cleaner display
-	Name.RemoveFromStart(TEXT("mcp__unrealclaude__unreal_"));
+	Name.RemoveFromStart(TEXT("mcp__unrealaicli__unreal_"));
 	return Name;
 }
 
@@ -1092,7 +1114,7 @@ void SClaudeEditorWidget::UpdateToolGroupSummary()
 		if (ToolGroupDoneCount >= 1)
 		{
 			ToolGroupSummaryText->SetText(FText::FromString(
-				FString::Printf(TEXT("✓ %s completed"), *DisplayName)));
+				FString::Printf(TEXT("�?%s completed"), *DisplayName)));
 			ToolGroupSummaryText->SetColorAndOpacity(
 				FSlateColor(FLinearColor(0.3f, 0.75f, 0.3f)));
 		}
@@ -1108,7 +1130,7 @@ void SClaudeEditorWidget::UpdateToolGroupSummary()
 		if (ToolGroupDoneCount >= ToolGroupCount)
 		{
 			ToolGroupSummaryText->SetText(FText::FromString(
-				FString::Printf(TEXT("✓ %d tools completed"), ToolGroupCount)));
+				FString::Printf(TEXT("�?%d tools completed"), ToolGroupCount)));
 			ToolGroupSummaryText->SetColorAndOpacity(
 				FSlateColor(FLinearColor(0.3f, 0.75f, 0.3f)));
 		}
@@ -1300,90 +1322,49 @@ FText SClaudeEditorWidget::GetProjectContextSummary() const
 
 FString SClaudeEditorWidget::GenerateMCPStatusMessage() const
 {
-	FString StatusMessage = TEXT("─────────────────────────────────\n");
+	FString StatusMessage = TEXT("---------------------------------\n");
 	StatusMessage += TEXT("MCP Tool Status:\n");
 
-	// Check module availability first to avoid race conditions during startup
 	if (!FUnrealClaudeModule::IsAvailable())
 	{
-		StatusMessage += TEXT("❌ MCP Server: MODULE NOT LOADED\n");
-		StatusMessage += TEXT("─────────────────────────────────");
+		StatusMessage += TEXT("[X] MCP Server: MODULE NOT LOADED\n");
+		StatusMessage += TEXT("---------------------------------");
 		return StatusMessage;
 	}
 
-	// Try to get MCP server
 	TSharedPtr<FUnrealClaudeMCPServer> MCPServer = FUnrealClaudeModule::Get().GetMCPServer();
-
 	if (!MCPServer.IsValid() || !MCPServer->IsRunning())
 	{
-		// MCP server not running
-		StatusMessage += TEXT("❌ MCP Server: NOT RUNNING\n\n");
-		StatusMessage += TEXT("⚠️ MCP tools are unavailable.\n\n");
-		StatusMessage += TEXT("Troubleshooting:\n");
-		StatusMessage += TEXT("  • Check Output Log for MCP errors\n");
-		StatusMessage += TEXT("  • Run: npm install in Resources/mcp-bridge\n");
-		StatusMessage += FString::Printf(TEXT("  • Verify port %d is available\n"), UnrealClaudeConstants::MCPServer::DefaultPort);
-		StatusMessage += TEXT("─────────────────────────────────");
+		StatusMessage += TEXT("[X] MCP Server: NOT RUNNING\n\n");
+		StatusMessage += TEXT("Available after MCP server starts.\n");
+		StatusMessage += TEXT("---------------------------------");
 		return StatusMessage;
 	}
 
-	// MCP server running - check tools
-	TSharedPtr<FMCPToolRegistry> ToolRegistry = MCPServer->GetToolRegistry();
-	if (!ToolRegistry.IsValid())
+	TSharedPtr<FMCPToolRegistry> Registry = MCPServer->GetToolRegistry();
+	if (!Registry.IsValid())
 	{
-		StatusMessage += TEXT("❌ Tool Registry: NOT INITIALIZED\n");
-		StatusMessage += TEXT("─────────────────────────────────");
+		StatusMessage += TEXT("[X] Tool Registry: NOT AVAILABLE\n");
+		StatusMessage += TEXT("---------------------------------");
 		return StatusMessage;
 	}
 
-	// Get registered tools
-	TArray<FMCPToolInfo> RegisteredTools = ToolRegistry->GetAllTools();
+	TArray<FMCPToolInfo> Tools = Registry->GetAllTools();
+	StatusMessage += FString::Printf(TEXT("[OK] MCP Server: RUNNING (%d tools)\n\n"), Tools.Num());
 
-	// Build set of registered tool names for quick lookup
-	TSet<FString> RegisteredToolNames;
-	for (const FMCPToolInfo& Tool : RegisteredTools)
+	for (const FMCPToolInfo& Tool : Tools)
 	{
-		RegisteredToolNames.Add(Tool.Name);
+		StatusMessage += FString::Printf(TEXT("  - %s\n"), *Tool.Name);
 	}
 
-	// Get expected tools from constants
-	const TArray<FString>& ExpectedTools = UnrealClaudeConstants::MCPServer::ExpectedTools;
-
-	// Check each expected tool - only track missing ones
-	int32 AvailableCount = 0;
-	TArray<FString> MissingTools;
-
-	for (const FString& ToolName : ExpectedTools)
-	{
-		if (RegisteredToolNames.Contains(ToolName))
-		{
-			AvailableCount++;
-		}
-		else
-		{
-			MissingTools.Add(ToolName);
-		}
-	}
-
-	// Summary - only show details if there are issues
-	if (MissingTools.Num() == 0)
-	{
-		StatusMessage += FString::Printf(TEXT("  ✓ All %d tools operational\n"), AvailableCount);
-	}
-	else
-	{
-		StatusMessage += FString::Printf(TEXT("  ✓ %d/%d tools available\n"), AvailableCount, ExpectedTools.Num());
-		StatusMessage += TEXT("\n⚠️ Missing tools:\n");
-		for (const FString& ToolName : MissingTools)
-		{
-			StatusMessage += FString::Printf(TEXT("  ✗ %s\n"), *ToolName);
-		}
-		StatusMessage += TEXT("\nCheck Output Log for details.\n");
-	}
-
-	StatusMessage += TEXT("─────────────────────────────────");
-
+	StatusMessage += TEXT("---------------------------------");
 	return StatusMessage;
 }
 
 #undef LOCTEXT_NAMESPACE
+
+
+
+
+
+

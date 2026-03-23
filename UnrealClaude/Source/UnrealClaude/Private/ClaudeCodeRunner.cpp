@@ -10,6 +10,7 @@
 #include "Misc/App.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Base64.h"
+#include "Misc/ConfigCacheIni.h"
 #include "Async/Async.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
@@ -65,141 +66,240 @@ void FClaudeCodeRunner::CleanupHandles()
 
 bool FClaudeCodeRunner::IsClaudeAvailable()
 {
-	FString ClaudePath = GetClaudePath();
+	FString ClaudePath = GetProviderPath(EUnrealClaudeProviderMode::Claude);
 	return !ClaudePath.IsEmpty();
 }
 
 FString FClaudeCodeRunner::GetClaudePath()
 {
-	// Cache the path to avoid repeated lookups and log spam
-	static FString CachedClaudePath;
-	static bool bHasSearched = false;
+	return GetProviderPath(EUnrealClaudeProviderMode::Claude);
+}
 
-	if (bHasSearched && !CachedClaudePath.IsEmpty())
+EUnrealClaudeProviderMode FClaudeCodeRunner::GetProviderMode()
+{
+	FString ModeValue = TEXT("Claude");
+	if (GConfig)
 	{
-		// Only return cached path if it's valid
-		return CachedClaudePath;
+		GConfig->GetString(TEXT("UnrealClaude"), TEXT("ProviderMode"), ModeValue, GEditorIni);
 	}
-	// Allow re-search if previous search failed (CachedClaudePath is empty)
-	bHasSearched = true;
+	ModeValue.TrimStartAndEndInline();
 
-	// Check common locations for claude CLI
+	if (ModeValue.Equals(TEXT("MCPOnly"), ESearchCase::IgnoreCase) ||
+		ModeValue.Equals(TEXT("None"), ESearchCase::IgnoreCase))
+	{
+		return EUnrealClaudeProviderMode::MCPOnly;
+	}
+	if (ModeValue.Equals(TEXT("Codex"), ESearchCase::IgnoreCase))
+	{
+		return EUnrealClaudeProviderMode::Codex;
+	}
+	return EUnrealClaudeProviderMode::Claude;
+}
+
+bool FClaudeCodeRunner::IsMCPOnlyMode()
+{
+	return GetProviderMode() == EUnrealClaudeProviderMode::MCPOnly;
+}
+
+bool FClaudeCodeRunner::IsConfiguredProviderAvailable()
+{
+	EUnrealClaudeProviderMode Provider = GetProviderMode();
+	if (Provider == EUnrealClaudeProviderMode::MCPOnly)
+	{
+		return false;
+	}
+	return !GetProviderPath(Provider).IsEmpty();
+}
+
+FString FClaudeCodeRunner::GetConfiguredProviderName()
+{
+	return GetProviderLabel(GetProviderMode());
+}
+
+FString FClaudeCodeRunner::GetConfiguredProviderInstallHint()
+{
+	return GetProviderInstallHint(GetProviderMode());
+}
+
+FString FClaudeCodeRunner::GetConfiguredProviderLoginHint()
+{
+	return GetProviderLoginHint(GetProviderMode());
+}
+
+FString FClaudeCodeRunner::GetProviderExecutableName(EUnrealClaudeProviderMode Provider)
+{
+	switch (Provider)
+	{
+	case EUnrealClaudeProviderMode::Codex:
+		return TEXT("codex");
+	case EUnrealClaudeProviderMode::MCPOnly:
+		return TEXT("");
+	case EUnrealClaudeProviderMode::Claude:
+	default:
+		return TEXT("claude");
+	}
+}
+
+FString FClaudeCodeRunner::GetProviderLabel(EUnrealClaudeProviderMode Provider)
+{
+	switch (Provider)
+	{
+	case EUnrealClaudeProviderMode::Codex:
+		return TEXT("Codex");
+	case EUnrealClaudeProviderMode::MCPOnly:
+		return TEXT("MCP Only");
+	case EUnrealClaudeProviderMode::Claude:
+	default:
+		return TEXT("Claude Code");
+	}
+}
+
+FString FClaudeCodeRunner::GetProviderInstallHint(EUnrealClaudeProviderMode Provider)
+{
+	switch (Provider)
+	{
+	case EUnrealClaudeProviderMode::Codex:
+		return TEXT("npm install -g @openai/codex");
+	case EUnrealClaudeProviderMode::MCPOnly:
+		return TEXT("");
+	case EUnrealClaudeProviderMode::Claude:
+	default:
+		return TEXT("npm install -g @anthropic-ai/claude-code");
+	}
+}
+
+FString FClaudeCodeRunner::GetProviderLoginHint(EUnrealClaudeProviderMode Provider)
+{
+	switch (Provider)
+	{
+	case EUnrealClaudeProviderMode::Codex:
+		return TEXT("codex login");
+	case EUnrealClaudeProviderMode::MCPOnly:
+		return TEXT("");
+	case EUnrealClaudeProviderMode::Claude:
+	default:
+		return TEXT("claude auth login");
+	}
+}
+
+FString FClaudeCodeRunner::GetProviderPath(EUnrealClaudeProviderMode Provider)
+{
+	if (Provider == EUnrealClaudeProviderMode::MCPOnly)
+	{
+		return FString();
+	}
+
+	const FString Executable = GetProviderExecutableName(Provider);
+	if (Executable.IsEmpty())
+	{
+		return FString();
+	}
+
+	static TMap<FString, FString> StaticCache;
+	static TSet<FString> SearchedExecutables;
+
+	if (StaticCache.Contains(Executable) && !StaticCache[Executable].IsEmpty())
+	{
+		return StaticCache[Executable];
+	}
+
+	if (SearchedExecutables.Contains(Executable) && (!StaticCache.Contains(Executable) || StaticCache[Executable].IsEmpty()))
+	{
+		return FString();
+	}
+	SearchedExecutables.Add(Executable);
+
 	TArray<FString> PossiblePaths;
 
 #if PLATFORM_WINDOWS
-	// User profile .local/bin (Claude Code native installer location)
 	FString UserProfile = FPlatformMisc::GetEnvironmentVariable(TEXT("USERPROFILE"));
 	if (!UserProfile.IsEmpty())
 	{
-		PossiblePaths.Add(FPaths::Combine(UserProfile, TEXT(".local"), TEXT("bin"), TEXT("claude.exe")));
+		PossiblePaths.Add(FPaths::Combine(UserProfile, TEXT(".local"), TEXT("bin"), Executable + TEXT(".exe")));
+		PossiblePaths.Add(FPaths::Combine(UserProfile, TEXT("AppData"), TEXT("Roaming"), TEXT("npm"), Executable + TEXT(".cmd")));
 	}
 
-	// npm global install location
 	FString AppData = FPlatformMisc::GetEnvironmentVariable(TEXT("APPDATA"));
 	if (!AppData.IsEmpty())
 	{
-		PossiblePaths.Add(FPaths::Combine(AppData, TEXT("npm"), TEXT("claude.cmd")));
+		PossiblePaths.Add(FPaths::Combine(AppData, TEXT("npm"), Executable + TEXT(".cmd")));
 	}
 
-	// Local AppData npm
 	FString LocalAppData = FPlatformMisc::GetEnvironmentVariable(TEXT("LOCALAPPDATA"));
 	if (!LocalAppData.IsEmpty())
 	{
-		PossiblePaths.Add(FPaths::Combine(LocalAppData, TEXT("npm"), TEXT("claude.cmd")));
+		PossiblePaths.Add(FPaths::Combine(LocalAppData, TEXT("npm"), Executable + TEXT(".cmd")));
 	}
 
-	// User profile npm
-	if (!UserProfile.IsEmpty())
-	{
-		PossiblePaths.Add(FPaths::Combine(UserProfile, TEXT("AppData"), TEXT("Roaming"), TEXT("npm"), TEXT("claude.cmd")));
-	}
-
-	// Check PATH - try to find claude.cmd or claude.exe
 	FString PathEnv = FPlatformMisc::GetEnvironmentVariable(TEXT("PATH"));
 	TArray<FString> PathDirs;
 	PathEnv.ParseIntoArray(PathDirs, TEXT(";"), true);
-
 	for (const FString& Dir : PathDirs)
 	{
-		PossiblePaths.Add(FPaths::Combine(Dir, TEXT("claude.cmd")));
-		PossiblePaths.Add(FPaths::Combine(Dir, TEXT("claude.exe")));
+		PossiblePaths.Add(FPaths::Combine(Dir, Executable + TEXT(".cmd")));
+		PossiblePaths.Add(FPaths::Combine(Dir, Executable + TEXT(".exe")));
 	}
 #else
-	// Linux/Mac: Claude Code native installer location
 	FString Home = FPlatformMisc::GetEnvironmentVariable(TEXT("HOME"));
 	if (!Home.IsEmpty())
 	{
-		PossiblePaths.Add(FPaths::Combine(Home, TEXT(".local"), TEXT("bin"), TEXT("claude")));
+		PossiblePaths.Add(FPaths::Combine(Home, TEXT(".local"), TEXT("bin"), Executable));
+		PossiblePaths.Add(FPaths::Combine(Home, TEXT(".npm-global"), TEXT("bin"), Executable));
 	}
 
-	// Common system paths
-	PossiblePaths.Add(TEXT("/usr/local/bin/claude"));
-	PossiblePaths.Add(TEXT("/usr/bin/claude"));
+	PossiblePaths.Add(TEXT("/usr/local/bin/") + Executable);
+	PossiblePaths.Add(TEXT("/usr/bin/") + Executable);
 
-	// npm global install locations
-	if (!Home.IsEmpty())
-	{
-		// npm default global prefix on Linux
-		PossiblePaths.Add(FPaths::Combine(Home, TEXT(".npm-global"), TEXT("bin"), TEXT("claude")));
-		// nvm-managed node
-		PossiblePaths.Add(FPaths::Combine(Home, TEXT(".nvm"), TEXT("versions"), TEXT("node")));
-	}
-
-	// Check PATH
 	FString PathEnv = FPlatformMisc::GetEnvironmentVariable(TEXT("PATH"));
 	TArray<FString> PathDirs;
 	PathEnv.ParseIntoArray(PathDirs, TEXT(":"), true);
-
 	for (const FString& Dir : PathDirs)
 	{
-		PossiblePaths.Add(FPaths::Combine(Dir, TEXT("claude")));
+		PossiblePaths.Add(FPaths::Combine(Dir, Executable));
 	}
 #endif
 
-	// Check each path
 	for (const FString& Path : PossiblePaths)
 	{
 		if (IFileManager::Get().FileExists(*Path))
 		{
-			UE_LOG(LogUnrealClaude, Log, TEXT("Found Claude CLI at: %s"), *Path);
-			CachedClaudePath = Path;
-			return CachedClaudePath;
+			UE_LOG(LogUnrealClaude, Log, TEXT("Found %s CLI at: %s"), *GetProviderLabel(Provider), *Path);
+			StaticCache.Add(Executable, Path);
+			return Path;
 		}
 	}
 
-	// Try using 'where' (Windows) or 'which' (Linux/Mac) as fallback
-	FString WhereOutput;
-	FString WhereErrors;
-	int32 ReturnCode;
+	FString WhichOutput;
+	FString WhichErrors;
+	int32 ReturnCode = -1;
 
 #if PLATFORM_WINDOWS
 	const TCHAR* WhichCmd = TEXT("where");
-	const TCHAR* WhichArgs = TEXT("claude");
+	FString WhichArgsStr = Executable;
+	const TCHAR* WhichArgs = *WhichArgsStr;
 #else
-	// Route through /bin/sh for PATH resolution (consistent with clipboard handling)
 	const TCHAR* WhichCmd = TEXT("/bin/sh");
-	const TCHAR* WhichArgs = TEXT("-c 'which claude 2>/dev/null'");
+	FString WhichArgsStr = FString::Printf(TEXT("-c 'which %s 2>/dev/null'"), *Executable);
+	const TCHAR* WhichArgs = *WhichArgsStr;
 #endif
 
-	if (FPlatformProcess::ExecProcess(WhichCmd, WhichArgs, &ReturnCode, &WhereOutput, &WhereErrors) && ReturnCode == 0)
+	if (FPlatformProcess::ExecProcess(WhichCmd, WhichArgs, &ReturnCode, &WhichOutput, &WhichErrors) && ReturnCode == 0)
 	{
-		WhereOutput.TrimStartAndEndInline();
+		WhichOutput.TrimStartAndEndInline();
 		TArray<FString> Lines;
-		WhereOutput.ParseIntoArrayLines(Lines);
+		WhichOutput.ParseIntoArrayLines(Lines);
 		if (Lines.Num() > 0)
 		{
-			UE_LOG(LogUnrealClaude, Log, TEXT("Found Claude CLI via '%s': %s"), WhichCmd, *Lines[0]);
-			CachedClaudePath = Lines[0];
-			return CachedClaudePath;
+			StaticCache.Add(Executable, Lines[0]);
+			UE_LOG(LogUnrealClaude, Log, TEXT("Found %s CLI via '%s': %s"), *GetProviderLabel(Provider), WhichCmd, *Lines[0]);
+			return Lines[0];
 		}
 	}
 
-	UE_LOG(LogUnrealClaude, Warning, TEXT("Claude CLI not found. Please install with: npm install -g @anthropic-ai/claude-code"));
-
-	// CachedClaudePath remains empty if not found
-	return CachedClaudePath;
+	UE_LOG(LogUnrealClaude, Warning, TEXT("%s CLI not found. Install with: %s"), *GetProviderLabel(Provider), *GetProviderInstallHint(Provider));
+	StaticCache.Add(Executable, FString());
+	return FString();
 }
-
 bool FClaudeCodeRunner::ExecuteAsync(
 	const FClaudeRequestConfig& Config,
 	FOnClaudeResponse OnComplete,
@@ -209,14 +309,14 @@ bool FClaudeCodeRunner::ExecuteAsync(
 	bool Expected = false;
 	if (!bIsExecuting.CompareExchange(Expected, true))
 	{
-		UE_LOG(LogUnrealClaude, Warning, TEXT("Claude is already executing a request"));
+		UE_LOG(LogUnrealClaude, Warning, TEXT("A provider request is already executing"));
 		return false;
 	}
 
-	if (!IsClaudeAvailable())
+	if (!IsConfiguredProviderAvailable())
 	{
 		bIsExecuting = false;
-		OnComplete.ExecuteIfBound(TEXT("Claude CLI not found. Please install with: npm install -g @anthropic-ai/claude-code"), false);
+		OnComplete.ExecuteIfBound(FString::Printf(TEXT("%s CLI not found. Install with: %s"), *GetConfiguredProviderName(), *GetConfiguredProviderInstallHint()), false);
 		return false;
 	}
 
@@ -245,16 +345,16 @@ bool FClaudeCodeRunner::ExecuteAsync(
 
 bool FClaudeCodeRunner::ExecuteSync(const FClaudeRequestConfig& Config, FString& OutResponse)
 {
-	if (!IsClaudeAvailable())
+	if (!IsConfiguredProviderAvailable())
 	{
-		OutResponse = TEXT("Claude CLI not found. Please install with: npm install -g @anthropic-ai/claude-code");
+		OutResponse = FString::Printf(TEXT("%s CLI not found. Install with: %s"), *GetConfiguredProviderName(), *GetConfiguredProviderInstallHint());
 		return false;
 	}
 
-	FString ClaudePath = GetClaudePath();
+	FString ProviderPath = GetProviderPath(GetProviderMode());
 	FString CommandLine = BuildCommandLine(Config);
 
-	UE_LOG(LogUnrealClaude, Log, TEXT("Executing Claude: %s %s"), *ClaudePath, *CommandLine);
+	UE_LOG(LogUnrealClaude, Log, TEXT("Executing %s: %s %s"), *GetConfiguredProviderName(), *ProviderPath, *CommandLine);
 
 	FString StdOut;
 	FString StdErr;
@@ -268,7 +368,7 @@ bool FClaudeCodeRunner::ExecuteSync(const FClaudeRequestConfig& Config, FString&
 	}
 
 	bool bSuccess = FPlatformProcess::ExecProcess(
-		*ClaudePath,
+		*ProviderPath,
 		*CommandLine,
 		&ReturnCode,
 		&StdOut,
@@ -284,7 +384,7 @@ bool FClaudeCodeRunner::ExecuteSync(const FClaudeRequestConfig& Config, FString&
 	else
 	{
 		OutResponse = StdErr.IsEmpty() ? StdOut : StdErr;
-		UE_LOG(LogUnrealClaude, Error, TEXT("Claude execution failed: %s"), *OutResponse);
+		UE_LOG(LogUnrealClaude, Error, TEXT("Provider execution failed: %s"), *OutResponse);
 		return false;
 	}
 }
@@ -382,7 +482,7 @@ FString FClaudeCodeRunner::BuildCommandLine(const FClaudeRequestConfig& Config)
 
 	// Allowed tools - add MCP tools
 	TArray<FString> AllTools = Config.AllowedTools;
-	AllTools.Add(TEXT("mcp__unrealclaude__*")); // Allow all unrealclaude MCP tools
+	AllTools.Add(TEXT("mcp__unrealaicli__*")); // Allow all UnrealAICLI MCP tools
 	if (AllTools.Num() > 0)
 	{
 		CommandLine += FString::Printf(TEXT("--allowedTools \"%s\" "), *FString::Join(AllTools, TEXT(",")));
@@ -984,13 +1084,13 @@ bool FClaudeCodeRunner::CreateProcessPipes()
 
 bool FClaudeCodeRunner::LaunchProcess(const FString& FullCommand, const FString& WorkingDir)
 {
-	FString ClaudePath = GetClaudePath();
+	FString ProviderPath = GetProviderPath(GetProviderMode());
 
 	// FPlatformProcess::CreateProc takes the URL (executable) and Params separately
 	FString Params = FullCommand;
 
 	ProcessHandle = FPlatformProcess::CreateProc(
-		*ClaudePath,
+		*ProviderPath,
 		*Params,
 		false,    // bLaunchDetached
 		false,    // bLaunchHidden
@@ -1004,8 +1104,8 @@ bool FClaudeCodeRunner::LaunchProcess(const FString& FullCommand, const FString&
 
 	if (!ProcessHandle.IsValid())
 	{
-		UE_LOG(LogUnrealClaude, Error, TEXT("Failed to create Claude process"));
-		UE_LOG(LogUnrealClaude, Error, TEXT("Claude Path: %s"), *ClaudePath);
+		UE_LOG(LogUnrealClaude, Error, TEXT("Failed to create provider process"));
+		UE_LOG(LogUnrealClaude, Error, TEXT("Provider Path: %s"), *ProviderPath);
 		UE_LOG(LogUnrealClaude, Error, TEXT("Params: %s"), *Params);
 		UE_LOG(LogUnrealClaude, Error, TEXT("Working directory: %s"), *WorkingDir);
 		return false;
@@ -1114,25 +1214,25 @@ void FClaudeCodeRunner::ReportCompletion(const FString& Output, bool bSuccess)
 
 void FClaudeCodeRunner::ExecuteProcess()
 {
-	FString ClaudePath = GetClaudePath();
+	FString ProviderPath = GetProviderPath(GetProviderMode());
 
 	// Verify the path exists
-	if (ClaudePath.IsEmpty())
+	if (ProviderPath.IsEmpty())
 	{
-		ReportError(TEXT("Claude CLI not found. Please install with: npm install -g @anthropic-ai/claude-code"));
+		ReportError(FString::Printf(TEXT("%s CLI not found. Install with: %s"), *GetConfiguredProviderName(), *GetConfiguredProviderInstallHint()));
 		return;
 	}
 
-	if (!IFileManager::Get().FileExists(*ClaudePath))
+	if (!IFileManager::Get().FileExists(*ProviderPath))
 	{
-		UE_LOG(LogUnrealClaude, Error, TEXT("Claude path no longer exists: %s"), *ClaudePath);
-		ReportError(FString::Printf(TEXT("Claude CLI path invalid: %s"), *ClaudePath));
+		UE_LOG(LogUnrealClaude, Error, TEXT("%s path no longer exists: %s"), *GetConfiguredProviderName(), *ProviderPath);
+		ReportError(FString::Printf(TEXT("%s CLI path invalid: %s"), *GetConfiguredProviderName(), *ProviderPath));
 		return;
 	}
 
 	FString CommandLine = BuildCommandLine(CurrentConfig);
 
-	UE_LOG(LogUnrealClaude, Log, TEXT("Async executing Claude: %s %s"), *ClaudePath, *CommandLine);
+	UE_LOG(LogUnrealClaude, Log, TEXT("Async executing %s: %s %s"), *GetConfiguredProviderName(), *ProviderPath, *CommandLine);
 
 	// Set working directory - convert to absolute path since FPaths::ProjectDir()
 	// returns a relative path on macOS that external processes can't resolve
@@ -1145,11 +1245,11 @@ void FClaudeCodeRunner::ExecuteProcess()
 	// Create pipes for stdout capture
 	if (!CreateProcessPipes())
 	{
-		ReportError(TEXT("Failed to create pipe for Claude process"));
+		ReportError(FString::Printf(TEXT("Failed to create pipe for %s process"), *GetConfiguredProviderName()));
 		return;
 	}
 
-	UE_LOG(LogUnrealClaude, Log, TEXT("Full command: %s %s"), *ClaudePath, *CommandLine);
+	UE_LOG(LogUnrealClaude, Log, TEXT("Full command: %s %s"), *ProviderPath, *CommandLine);
 	UE_LOG(LogUnrealClaude, Log, TEXT("Working directory: %s"), *WorkingDir);
 
 	if (!LaunchProcess(CommandLine, WorkingDir))
@@ -1157,11 +1257,11 @@ void FClaudeCodeRunner::ExecuteProcess()
 		CleanupHandles();
 
 		FString ErrorMsg = FString::Printf(
-			TEXT("Failed to start Claude process.\n\n")
-			TEXT("Claude Path: %s\n")
+			TEXT("Failed to start provider process.\n\n")
+			TEXT("Provider Path: %s\n")
 			TEXT("Working Dir: %s\n\n")
 			TEXT("Command (truncated): %.200s..."),
-			*ClaudePath,
+			*ProviderPath,
 			*WorkingDir,
 			*CommandLine
 		);
@@ -1200,7 +1300,7 @@ void FClaudeCodeRunner::ExecuteProcess()
 			FTCHARToUTF8 Utf8Payload(*StdinPayload);
 			int32 BytesWritten = 0;
 			bool bWritten = FPlatformProcess::WritePipe(StdInWritePipe, (const uint8*)Utf8Payload.Get(), Utf8Payload.Length(), &BytesWritten);
-			UE_LOG(LogUnrealClaude, Log, TEXT("Wrote to Claude stdin (stream-json, success=%d, %d/%d bytes, images: %d, system: %d chars, user: %d chars)"),
+			UE_LOG(LogUnrealClaude, Log, TEXT("Wrote to provider stdin (stream-json, success=%d, %d/%d bytes, images: %d, system: %d chars, user: %d chars)"),
 				bWritten, BytesWritten, Utf8Payload.Length(), CurrentConfig.AttachedImagePaths.Num(),
 				CurrentConfig.SystemPrompt.Len(), CurrentConfig.Prompt.Len());
 		}
@@ -1249,3 +1349,14 @@ void FClaudeCodeRunner::ExecuteProcess()
 }
 
 // FClaudeCodeSubsystem is now in ClaudeSubsystem.cpp
+
+
+
+
+
+
+
+
+
+
+

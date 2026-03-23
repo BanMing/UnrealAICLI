@@ -112,21 +112,30 @@ void FUnrealClaudeMCPServer::SetupRoutes()
 	ListToolsHandle = HttpRouter->BindRoute(
 		FHttpPath(TEXT("/mcp/tools")),
 		EHttpServerRequestVerbs::VERB_GET,
-		FHttpRequestHandler::CreateRaw(this, &FUnrealClaudeMCPServer::HandleListTools)
+		[this](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
+		{
+			return HandleListTools(Request, OnComplete);
+		}
 	);
 
 	// POST /mcp/tool/* - Execute a tool (wildcard path)
 	ExecuteToolHandle = HttpRouter->BindRoute(
 		FHttpPath(TEXT("/mcp/tool")),
 		EHttpServerRequestVerbs::VERB_POST,
-		FHttpRequestHandler::CreateRaw(this, &FUnrealClaudeMCPServer::HandleExecuteTool)
+		[this](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
+		{
+			return HandleExecuteTool(Request, OnComplete);
+		}
 	);
 
 	// GET /mcp/status - Server status
 	StatusHandle = HttpRouter->BindRoute(
 		FHttpPath(TEXT("/mcp/status")),
 		EHttpServerRequestVerbs::VERB_GET,
-		FHttpRequestHandler::CreateRaw(this, &FUnrealClaudeMCPServer::HandleStatus)
+		[this](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
+		{
+			return HandleStatus(Request, OnComplete);
+		}
 	);
 }
 

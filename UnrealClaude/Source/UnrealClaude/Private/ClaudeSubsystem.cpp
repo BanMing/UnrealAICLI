@@ -93,6 +93,12 @@ void FClaudeCodeSubsystem::SendPrompt(
 	FOnClaudeResponse OnComplete,
 	const FClaudePromptOptions& Options)
 {
+	if (FClaudeCodeRunner::IsMCPOnlyMode())
+	{
+		OnComplete.ExecuteIfBound(TEXT("MCP-only mode is enabled. Chat provider is disabled."), false);
+		return;
+	}
+
 	FClaudeRequestConfig Config;
 
 	// Build prompt with conversation history context
@@ -266,3 +272,6 @@ FString FClaudeCodeSubsystem::BuildPromptWithHistory(const FString& NewPrompt) c
 
 	return PromptWithHistory;
 }
+
+
+
