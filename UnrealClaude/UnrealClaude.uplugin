@@ -10,19 +10,24 @@
 	"DocsURL": "https://github.com/Natfii/UnrealClaude",
 	"MarketplaceURL": "",
 	"SupportURL": "https://github.com/Natfii/UnrealClaude/issues",
+	"EngineVersion": "5.3.0",
 	"CanContainContent": false,
-	"IsBetaVersion": false,
-	"IsExperimentalVersion": false,
-	"Installed": false,
-	"EnabledByDefault": true,
-	"EngineVersion": "5.7.0",
-	"SupportedTargetPlatforms": [ "Win64", "Linux", "Mac" ],
+	"Installed": true,
+	"SupportedTargetPlatforms": [
+		"Win64",
+		"Linux",
+		"Mac"
+	],
 	"Modules": [
 		{
 			"Name": "UnrealClaude",
 			"Type": "Editor",
 			"LoadingPhase": "PostEngineInit",
-			"PlatformAllowList": [ "Win64", "Linux", "Mac" ]
+			"PlatformAllowList": [
+				"Win64",
+				"Linux",
+				"Mac"
+			]
 		}
 	],
 	"Plugins": [
