@@ -8,6 +8,14 @@
 #include "HAL/RunnableThread.h"
 #include "HAL/PlatformProcess.h"
 
+enum class EUnrealClaudeProviderMode : uint8
+{
+	Claude,
+	Codex,
+	MCPOnly
+};
+
+
 /**
  * Async runner for Claude Code CLI commands (cross-platform implementation)
  * Executes 'claude -p' in print mode and captures output
@@ -37,6 +45,24 @@ public:
 	/** Get the Claude CLI path */
 	static FString GetClaudePath();
 
+	/** Resolve configured provider mode from config */
+	static EUnrealClaudeProviderMode GetProviderMode();
+
+	/** True when config mode is MCP-only (chat disabled, server-only) */
+	static bool IsMCPOnlyMode();
+
+	/** Check if the configured provider CLI is available */
+	static bool IsConfiguredProviderAvailable();
+
+	/** Human-readable configured provider name */
+	static FString GetConfiguredProviderName();
+
+	/** Install hint for configured provider */
+	static FString GetConfiguredProviderInstallHint();
+
+	/** Login command hint for configured provider */
+	static FString GetConfiguredProviderLoginHint();
+
 	// FRunnable interface
 	virtual bool Init() override;
 	virtual uint32 Run() override;
@@ -53,6 +79,11 @@ private:
 	FString BuildCommandLine(const FClaudeRequestConfig& Config);
 	void ExecuteProcess();
 	void CleanupHandles();
+	static FString GetProviderPath(EUnrealClaudeProviderMode Provider);
+	static FString GetProviderLabel(EUnrealClaudeProviderMode Provider);
+	static FString GetProviderExecutableName(EUnrealClaudeProviderMode Provider);
+	static FString GetProviderInstallHint(EUnrealClaudeProviderMode Provider);
+	static FString GetProviderLoginHint(EUnrealClaudeProviderMode Provider);
 
 	/** Parse a single NDJSON line and emit structured events */
 	void ParseAndEmitNdjsonLine(const FString& JsonLine);
@@ -99,3 +130,5 @@ private:
 	FString SystemPromptFilePath;
 	FString PromptFilePath;
 };
+
+

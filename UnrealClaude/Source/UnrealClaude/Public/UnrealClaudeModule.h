@@ -38,4 +38,6 @@ private:
 	TSharedPtr<class FUICommandList> PluginCommands;
 	TSharedPtr<class SDockTab> ClaudeTab;
 	TSharedPtr<FUnrealClaudeMCPServer> MCPServer;
+	bool bClaudeUIEnabled = false;
 };
+
