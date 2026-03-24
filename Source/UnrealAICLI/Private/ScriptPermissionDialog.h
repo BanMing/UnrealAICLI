@@ -54,4 +54,6 @@ private:
 	static TSharedRef<class SWidget> BuildButtonBar(
 		TSharedPtr<bool> bApprovedPtr,
 		TSharedPtr<class SWindow> Window);
+
+	static bool IsAlwaysAllowScriptExecute();
 };

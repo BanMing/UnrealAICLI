@@ -266,13 +266,38 @@ UBlueprint* FBlueprintLoader::CreateBlueprint(
 		return nullptr;
 	}
 
-	// Create the package path
+	// Build the canonical package/object path once and reuse it for all checks.
+	// Example:
+	//   FullPath   = /Game/CardGame/Blueprints/BP_CombatEntry
+	//   ObjectPath = /Game/CardGame/Blueprints/BP_CombatEntry.BP_CombatEntry
 	FString FullPath = PackagePath / BlueprintName;
+	FString ObjectPath = FString::Printf(TEXT("%s.%s"), *FullPath, *BlueprintName);
+
+	// Defensive idempotency:
+	// The MCP create endpoint can be called repeatedly (retries, reconnects, or user reruns).
+	// UE's factory path may assert if we attempt to create a Blueprint with the same object name
+	// in the same package. We therefore resolve an existing asset first and return it safely.
+	if (UBlueprint* ExistingBlueprint = LoadObject<UBlueprint>(nullptr, *ObjectPath))
+	{
+		UE_LOG(LogUnrealAICLI, Warning,
+			TEXT("Blueprint already exists, returning existing asset: %s"), *ObjectPath);
+		return ExistingBlueprint;
+	}
+
+	// Create (or load) package container after we have ruled out existing object collision.
 	UPackage* Package = CreatePackage(*FullPath);
 	if (!Package)
 	{
 		OutError = FString::Printf(TEXT("Failed to create package: %s"), *FullPath);
 		return nullptr;
+	}
+
+	// Double-check within package namespace before factory creation to avoid assertion paths.
+	if (UBlueprint* ExistingInPackage = FindObject<UBlueprint>(Package, *BlueprintName))
+	{
+		UE_LOG(LogUnrealAICLI, Warning,
+			TEXT("Blueprint already exists in package, returning existing asset: %s"), *ExistingInPackage->GetPathName());
+		return ExistingInPackage;
 	}
 
 	// Create Blueprint factory
@@ -329,6 +354,13 @@ UClass* FBlueprintLoader::FindParentClass(const FString& ParentClassName, FStrin
 	{
 		ParentClass = LoadClass<UObject>(nullptr,
 			*FString::Printf(TEXT("/Script/CoreUObject.%s"), *ParentClassName));
+	}
+
+	// Support common UMG parent lookups (e.g. "UserWidget") used by MCP blueprint create calls.
+	if (!ParentClass)
+	{
+		ParentClass = LoadClass<UObject>(nullptr,
+			*FString::Printf(TEXT("/Script/UMG.%s"), *ParentClassName));
 	}
 
 	// Try finding by short name

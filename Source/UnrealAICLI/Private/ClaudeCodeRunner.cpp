@@ -1,29 +1,24 @@
 // Copyright Natali Caggiano. All Rights Reserved.
 
 #include "ClaudeCodeRunner.h"
-#include "UnrealAICLIModule.h"
-#include "UnrealAICLIConstants.h"
-#include "ProjectContext.h"
-#include "HAL/PlatformProcess.h"
+
+#include "Async/Async.h"
+#include "Dom/JsonObject.h"
 #include "HAL/FileManager.h"
-#include "Misc/Paths.h"
+#include "HAL/PlatformProcess.h"
 #include "Misc/App.h"
-#include "Misc/FileHelper.h"
 #include "Misc/Base64.h"
 #include "Misc/ConfigCacheIni.h"
-#include "Async/Async.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
+#include "ProjectContext.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
-#include "Dom/JsonObject.h"
+#include "UnrealAICLIConstants.h"
+#include "UnrealAICLIModule.h"
 
-FClaudeCodeRunner::FClaudeCodeRunner()
-	: Thread(nullptr)
-	, bIsExecuting(false)
-	, ReadPipe(nullptr)
-	, WritePipe(nullptr)
-	, StdInReadPipe(nullptr)
-	, StdInWritePipe(nullptr)
+FClaudeCodeRunner::FClaudeCodeRunner() : Thread(nullptr), bIsExecuting(false), ReadPipe(nullptr), WritePipe(nullptr), StdInReadPipe(nullptr), StdInWritePipe(nullptr)
 {
 }
 
@@ -87,8 +82,7 @@ EUnrealAICLIProviderMode FClaudeCodeRunner::GetProviderMode()
 	}
 	ModeValue.TrimStartAndEndInline();
 
-	if (ModeValue.Equals(TEXT("MCPOnly"), ESearchCase::IgnoreCase) ||
-		ModeValue.Equals(TEXT("None"), ESearchCase::IgnoreCase))
+	if (ModeValue.Equals(TEXT("MCPOnly"), ESearchCase::IgnoreCase) || ModeValue.Equals(TEXT("None"), ESearchCase::IgnoreCase))
 	{
 		return EUnrealAICLIProviderMode::MCPOnly;
 	}
@@ -148,13 +142,13 @@ FString FClaudeCodeRunner::GetProviderExecutableName(EUnrealAICLIProviderMode Pr
 {
 	switch (Provider)
 	{
-	case EUnrealAICLIProviderMode::Codex:
-		return TEXT("codex");
-	case EUnrealAICLIProviderMode::MCPOnly:
-		return TEXT("");
-	case EUnrealAICLIProviderMode::Claude:
-	default:
-		return TEXT("claude");
+		case EUnrealAICLIProviderMode::Codex:
+			return TEXT("codex");
+		case EUnrealAICLIProviderMode::MCPOnly:
+			return TEXT("");
+		case EUnrealAICLIProviderMode::Claude:
+		default:
+			return TEXT("claude");
 	}
 }
 
@@ -162,13 +156,13 @@ FString FClaudeCodeRunner::GetProviderLabel(EUnrealAICLIProviderMode Provider)
 {
 	switch (Provider)
 	{
-	case EUnrealAICLIProviderMode::Codex:
-		return TEXT("Codex");
-	case EUnrealAICLIProviderMode::MCPOnly:
-		return TEXT("MCP Only");
-	case EUnrealAICLIProviderMode::Claude:
-	default:
-		return TEXT("Claude Code");
+		case EUnrealAICLIProviderMode::Codex:
+			return TEXT("Codex");
+		case EUnrealAICLIProviderMode::MCPOnly:
+			return TEXT("MCP Only");
+		case EUnrealAICLIProviderMode::Claude:
+		default:
+			return TEXT("Claude Code");
 	}
 }
 
@@ -176,13 +170,13 @@ FString FClaudeCodeRunner::GetProviderInstallHint(EUnrealAICLIProviderMode Provi
 {
 	switch (Provider)
 	{
-	case EUnrealAICLIProviderMode::Codex:
-		return TEXT("npm install -g @openai/codex");
-	case EUnrealAICLIProviderMode::MCPOnly:
-		return TEXT("");
-	case EUnrealAICLIProviderMode::Claude:
-	default:
-		return TEXT("npm install -g @anthropic-ai/claude-code");
+		case EUnrealAICLIProviderMode::Codex:
+			return TEXT("npm install -g @openai/codex");
+		case EUnrealAICLIProviderMode::MCPOnly:
+			return TEXT("");
+		case EUnrealAICLIProviderMode::Claude:
+		default:
+			return TEXT("npm install -g @anthropic-ai/claude-code");
 	}
 }
 
@@ -190,13 +184,13 @@ FString FClaudeCodeRunner::GetProviderLoginHint(EUnrealAICLIProviderMode Provide
 {
 	switch (Provider)
 	{
-	case EUnrealAICLIProviderMode::Codex:
-		return TEXT("codex login");
-	case EUnrealAICLIProviderMode::MCPOnly:
-		return TEXT("");
-	case EUnrealAICLIProviderMode::Claude:
-	default:
-		return TEXT("claude auth login");
+		case EUnrealAICLIProviderMode::Codex:
+			return TEXT("codex login");
+		case EUnrealAICLIProviderMode::MCPOnly:
+			return TEXT("");
+		case EUnrealAICLIProviderMode::Claude:
+		default:
+			return TEXT("claude auth login");
 	}
 }
 
@@ -318,10 +312,7 @@ FString FClaudeCodeRunner::GetProviderPath(EUnrealAICLIProviderMode Provider)
 	StaticCache.Add(Executable, FString());
 	return FString();
 }
-bool FClaudeCodeRunner::ExecuteAsync(
-	const FClaudeRequestConfig& Config,
-	FOnClaudeResponse OnComplete,
-	FOnClaudeProgress OnProgress)
+bool FClaudeCodeRunner::ExecuteAsync(const FClaudeRequestConfig& Config, FOnClaudeResponse OnComplete, FOnClaudeProgress OnProgress)
 {
 	// Use atomic compare-exchange for thread-safe check-and-set
 	bool Expected = false;
@@ -385,14 +376,7 @@ bool FClaudeCodeRunner::ExecuteSync(const FClaudeRequestConfig& Config, FString&
 		WorkingDir = FPaths::ProjectDir();
 	}
 
-	bool bSuccess = FPlatformProcess::ExecProcess(
-		*ProviderPath,
-		*CommandLine,
-		&ReturnCode,
-		&StdOut,
-		&StdErr,
-		*WorkingDir
-	);
+	bool bSuccess = FPlatformProcess::ExecProcess(*ProviderPath, *CommandLine, &ReturnCode, &StdOut, &StdErr, *WorkingDir);
 
 	if (bSuccess && ReturnCode == 0)
 	{
@@ -431,8 +415,7 @@ static FString GetPluginDirectory()
 		return ProjectPluginPath;
 	}
 
-	UE_LOG(LogUnrealAICLI, Warning, TEXT("Could not find UnrealAICLI plugin directory. Checked: %s, %s, %s"),
-		*EnginePluginPath, *MarketplacePluginPath, *ProjectPluginPath);
+	UE_LOG(LogUnrealAICLI, Warning, TEXT("Could not find UnrealAICLI plugin directory. Checked: %s, %s, %s"), *EnginePluginPath, *MarketplacePluginPath, *ProjectPluginPath);
 	return FString();
 }
 
@@ -472,11 +455,9 @@ FString FClaudeCodeRunner::BuildCommandLine(const FClaudeRequestConfig& Config)
 			IFileManager::Get().MakeDirectory(*MCPConfigDir, true);
 
 			FString MCPConfigPath = FPaths::Combine(MCPConfigDir, TEXT("mcp-config.json"));
-			FString MCPConfigContent = FString::Printf(
-				TEXT("{\n  \"mcpServers\": {\n    \"unrealaicli\": {\n      \"command\": \"node\",\n      \"args\": [\"%s\"],\n      \"env\": {\n        \"UNREAL_MCP_URL\": \"http://localhost:%d\"\n      }\n    }\n  }\n}"),
-				*MCPBridgePath.Replace(TEXT("\\"), TEXT("/")),
-				UnrealAICLIConstants::MCPServer::DefaultPort
-			);
+			FString MCPConfigContent = FString::Printf(TEXT("{\n  \"mcpServers\": {\n    \"unrealaicli\": {\n      \"command\": \"node\",\n      \"args\": [\"%s\"],\n      \"env\": {\n        \"UNREAL_MCP_URL\": "
+															"\"http://localhost:%d\"\n      }\n    }\n  }\n}"),
+				*MCPBridgePath.Replace(TEXT("\\"), TEXT("/")), UnrealAICLIConstants::MCPServer::DefaultPort);
 
 			if (FFileHelper::SaveStringToFile(MCPConfigContent, *MCPConfigPath))
 			{
@@ -500,7 +481,7 @@ FString FClaudeCodeRunner::BuildCommandLine(const FClaudeRequestConfig& Config)
 
 	// Allowed tools - add MCP tools
 	TArray<FString> AllTools = Config.AllowedTools;
-	AllTools.Add(TEXT("mcp__unrealaicli__*")); // Allow all UnrealAICLI MCP tools
+	AllTools.Add(TEXT("mcp__unrealaicli__*"));	  // Allow all UnrealAICLI MCP tools
 	if (AllTools.Num() > 0)
 	{
 		CommandLine += FString::Printf(TEXT("--allowedTools \"%s\" "), *FString::Join(AllTools, TEXT(",")));
@@ -538,8 +519,7 @@ FString FClaudeCodeRunner::BuildStreamJsonPayload(const FString& TextPrompt, con
 	using namespace UnrealAICLIConstants::ClipboardImage;
 
 	// Pre-compute expected directory once for all images
-	FString ExpectedDir = FPaths::ConvertRelativePathToFull(
-		FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("UnrealAICLI"), TEXT("screenshots")));
+	FString ExpectedDir = FPaths::ConvertRelativePathToFull(FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("UnrealAICLI"), TEXT("screenshots")));
 
 	// Build content blocks array
 	TArray<TSharedPtr<FJsonValue>> ContentArray;
@@ -588,16 +568,14 @@ FString FClaudeCodeRunner::BuildStreamJsonPayload(const FString& TextPrompt, con
 		const int64 FileSize = IFileManager::Get().FileSize(*FullImagePath);
 		if (FileSize > MaxImageFileSize)
 		{
-			UE_LOG(LogUnrealAICLI, Warning, TEXT("Image file too large for base64 encoding: %s (%lld bytes, max %lld)"),
-				*FullImagePath, FileSize, MaxImageFileSize);
+			UE_LOG(LogUnrealAICLI, Warning, TEXT("Image file too large for base64 encoding: %s (%lld bytes, max %lld)"), *FullImagePath, FileSize, MaxImageFileSize);
 			continue;
 		}
 
 		// Check total payload size
 		if (TotalImageBytes + FileSize > MaxTotalImagePayloadSize)
 		{
-			UE_LOG(LogUnrealAICLI, Warning, TEXT("Skipping image (total payload would exceed %lld bytes): %s"),
-				MaxTotalImagePayloadSize, *FullImagePath);
+			UE_LOG(LogUnrealAICLI, Warning, TEXT("Skipping image (total payload would exceed %lld bytes): %s"), MaxTotalImagePayloadSize, *FullImagePath);
 			continue;
 		}
 
@@ -623,8 +601,7 @@ FString FClaudeCodeRunner::BuildStreamJsonPayload(const FString& TextPrompt, con
 		ContentArray.Add(MakeShared<FJsonValueObject>(ImageBlock));
 
 		EncodedCount++;
-		UE_LOG(LogUnrealAICLI, Log, TEXT("Base64 encoded image [%d]: %s (%d bytes -> %d chars)"),
-			EncodedCount, *FullImagePath, ImageData.Num(), Base64ImageData.Len());
+		UE_LOG(LogUnrealAICLI, Log, TEXT("Base64 encoded image [%d]: %s (%d bytes -> %d chars)"), EncodedCount, *FullImagePath, ImageData.Num(), Base64ImageData.Len());
 	}
 
 	if (EncodedCount > 0)
@@ -644,16 +621,14 @@ FString FClaudeCodeRunner::BuildStreamJsonPayload(const FString& TextPrompt, con
 
 	// Serialize to condensed JSON (single line for NDJSON)
 	FString JsonLine;
-	TSharedRef<TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> Writer =
-		TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&JsonLine);
+	TSharedRef<TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> Writer = TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&JsonLine);
 	FJsonSerializer::Serialize(Envelope.ToSharedRef(), Writer);
 	Writer->Close();
 
 	// NDJSON requires newline termination
 	JsonLine += TEXT("\n");
 
-	UE_LOG(LogUnrealAICLI, Log, TEXT("Built stream-json payload: %d chars (images: %d)"),
-		JsonLine.Len(), EncodedCount);
+	UE_LOG(LogUnrealAICLI, Log, TEXT("Built stream-json payload: %d chars (images: %d)"), JsonLine.Len(), EncodedCount);
 
 	return JsonLine;
 }
@@ -804,10 +779,7 @@ void FClaudeCodeRunner::ParseAndEmitNdjsonLine(const FString& JsonLine)
 			Event.SessionId = SessionId;
 			Event.RawJson = JsonLine;
 			FOnClaudeStreamEvent EventDelegate = CurrentConfig.OnStreamEvent;
-			AsyncTask(ENamedThreads::GameThread, [EventDelegate, Event]()
-			{
-				EventDelegate.ExecuteIfBound(Event);
-			});
+			AsyncTask(ENamedThreads::GameThread, [EventDelegate, Event]() { EventDelegate.ExecuteIfBound(Event); });
 		}
 	}
 	else if (Type == TEXT("assistant"))
@@ -853,10 +825,7 @@ void FClaudeCodeRunner::ParseAndEmitNdjsonLine(const FString& JsonLine)
 					if (OnProgressDelegate.IsBound())
 					{
 						FOnClaudeProgress ProgressCopy = OnProgressDelegate;
-						AsyncTask(ENamedThreads::GameThread, [ProgressCopy, Text]()
-						{
-							ProgressCopy.ExecuteIfBound(Text);
-						});
+						AsyncTask(ENamedThreads::GameThread, [ProgressCopy, Text]() { ProgressCopy.ExecuteIfBound(Text); });
 					}
 
 					// Fire new structured event
@@ -866,10 +835,7 @@ void FClaudeCodeRunner::ParseAndEmitNdjsonLine(const FString& JsonLine)
 						Event.Type = EClaudeStreamEventType::TextContent;
 						Event.Text = Text;
 						FOnClaudeStreamEvent EventDelegate = CurrentConfig.OnStreamEvent;
-						AsyncTask(ENamedThreads::GameThread, [EventDelegate, Event]()
-						{
-							EventDelegate.ExecuteIfBound(Event);
-						});
+						AsyncTask(ENamedThreads::GameThread, [EventDelegate, Event]() { EventDelegate.ExecuteIfBound(Event); });
 					}
 				}
 			}
@@ -884,14 +850,12 @@ void FClaudeCodeRunner::ParseAndEmitNdjsonLine(const FString& JsonLine)
 				const TSharedPtr<FJsonObject>* InputObj;
 				if ((*ContentObj)->TryGetObjectField(TEXT("input"), InputObj))
 				{
-					TSharedRef<TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> Writer =
-						TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&ToolInputStr);
+					TSharedRef<TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> Writer = TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&ToolInputStr);
 					FJsonSerializer::Serialize((*InputObj).ToSharedRef(), Writer);
 					Writer->Close();
 				}
 
-				UE_LOG(LogUnrealAICLI, Log, TEXT("NDJSON ToolUse: name=%s, id=%s, input=%d chars"),
-					*ToolName, *ToolId, ToolInputStr.Len());
+				UE_LOG(LogUnrealAICLI, Log, TEXT("NDJSON ToolUse: name=%s, id=%s, input=%d chars"), *ToolName, *ToolId, ToolInputStr.Len());
 
 				if (CurrentConfig.OnStreamEvent.IsBound())
 				{
@@ -902,10 +866,7 @@ void FClaudeCodeRunner::ParseAndEmitNdjsonLine(const FString& JsonLine)
 					Event.ToolInput = ToolInputStr;
 					Event.RawJson = JsonLine;
 					FOnClaudeStreamEvent EventDelegate = CurrentConfig.OnStreamEvent;
-					AsyncTask(ENamedThreads::GameThread, [EventDelegate, Event]()
-					{
-						EventDelegate.ExecuteIfBound(Event);
-					});
+					AsyncTask(ENamedThreads::GameThread, [EventDelegate, Event]() { EventDelegate.ExecuteIfBound(Event); });
 				}
 			}
 			else
@@ -979,8 +940,7 @@ void FClaudeCodeRunner::ParseAndEmitNdjsonLine(const FString& JsonLine)
 					}
 				}
 
-				UE_LOG(LogUnrealAICLI, Log, TEXT("NDJSON ToolResult: tool_use_id=%s, content=%d chars"),
-					*ToolUseId, ResultContent.Len());
+				UE_LOG(LogUnrealAICLI, Log, TEXT("NDJSON ToolResult: tool_use_id=%s, content=%d chars"), *ToolUseId, ResultContent.Len());
 
 				if (CurrentConfig.OnStreamEvent.IsBound())
 				{
@@ -990,10 +950,7 @@ void FClaudeCodeRunner::ParseAndEmitNdjsonLine(const FString& JsonLine)
 					Event.ToolResultContent = ResultContent;
 					Event.RawJson = JsonLine;
 					FOnClaudeStreamEvent EventDelegate = CurrentConfig.OnStreamEvent;
-					AsyncTask(ENamedThreads::GameThread, [EventDelegate, Event]()
-					{
-						EventDelegate.ExecuteIfBound(Event);
-					});
+					AsyncTask(ENamedThreads::GameThread, [EventDelegate, Event]() { EventDelegate.ExecuteIfBound(Event); });
 				}
 			}
 		}
@@ -1013,8 +970,7 @@ void FClaudeCodeRunner::ParseAndEmitNdjsonLine(const FString& JsonLine)
 		double TotalCostUsd = 0.0;
 		JsonObj->TryGetNumberField(TEXT("total_cost_usd"), TotalCostUsd);
 
-		UE_LOG(LogUnrealAICLI, Log, TEXT("NDJSON Result: subtype=%s, is_error=%d, duration=%.0fms, turns=%.0f, cost=$%.4f, result=%d chars"),
-			*Subtype, bIsError, DurationMs, NumTurns, TotalCostUsd, ResultText.Len());
+		UE_LOG(LogUnrealAICLI, Log, TEXT("NDJSON Result: subtype=%s, is_error=%d, duration=%.0fms, turns=%.0f, cost=$%.4f, result=%d chars"), *Subtype, bIsError, DurationMs, NumTurns, TotalCostUsd, ResultText.Len());
 
 		if (CurrentConfig.OnStreamEvent.IsBound())
 		{
@@ -1027,10 +983,7 @@ void FClaudeCodeRunner::ParseAndEmitNdjsonLine(const FString& JsonLine)
 			Event.TotalCostUsd = static_cast<float>(TotalCostUsd);
 			Event.RawJson = JsonLine;
 			FOnClaudeStreamEvent EventDelegate = CurrentConfig.OnStreamEvent;
-			AsyncTask(ENamedThreads::GameThread, [EventDelegate, Event]()
-			{
-				EventDelegate.ExecuteIfBound(Event);
-			});
+			AsyncTask(ENamedThreads::GameThread, [EventDelegate, Event]() { EventDelegate.ExecuteIfBound(Event); });
 		}
 	}
 	else
@@ -1107,17 +1060,15 @@ bool FClaudeCodeRunner::LaunchProcess(const FString& FullCommand, const FString&
 	// FPlatformProcess::CreateProc takes the URL (executable) and Params separately
 	FString Params = FullCommand;
 
-	ProcessHandle = FPlatformProcess::CreateProc(
-		*ProviderPath,
-		*Params,
-		false,    // bLaunchDetached
-		false,    // bLaunchHidden
-		true,     // bLaunchReallyHidden
-		nullptr,  // OutProcessID
-		0,        // PriorityModifier
+	ProcessHandle = FPlatformProcess::CreateProc(*ProviderPath, *Params,
+		false,		// bLaunchDetached
+		false,		// bLaunchHidden
+		true,		// bLaunchReallyHidden
+		nullptr,	// OutProcessID
+		0,			// PriorityModifier
 		*WorkingDir,
-		WritePipe,    // PipeWriteChild - child's stdout goes here
-		StdInReadPipe // PipeReadChild - child reads stdin from here
+		WritePipe,		 // PipeWriteChild - child's stdout goes here
+		StdInReadPipe	 // PipeReadChild - child reads stdin from here
 	);
 
 	if (!ProcessHandle.IsValid())
@@ -1214,20 +1165,14 @@ void FClaudeCodeRunner::ReportError(const FString& ErrorMessage)
 {
 	FOnClaudeResponse CompleteCopy = OnCompleteDelegate;
 	FString Message = ErrorMessage;
-	AsyncTask(ENamedThreads::GameThread, [CompleteCopy, Message]()
-	{
-		CompleteCopy.ExecuteIfBound(Message, false);
-	});
+	AsyncTask(ENamedThreads::GameThread, [CompleteCopy, Message]() { CompleteCopy.ExecuteIfBound(Message, false); });
 }
 
 void FClaudeCodeRunner::ReportCompletion(const FString& Output, bool bSuccess)
 {
 	FOnClaudeResponse CompleteCopy = OnCompleteDelegate;
 	FString FinalOutput = Output;
-	AsyncTask(ENamedThreads::GameThread, [CompleteCopy, FinalOutput, bSuccess]()
-	{
-		CompleteCopy.ExecuteIfBound(FinalOutput, bSuccess);
-	});
+	AsyncTask(ENamedThreads::GameThread, [CompleteCopy, FinalOutput, bSuccess]() { CompleteCopy.ExecuteIfBound(FinalOutput, bSuccess); });
 }
 
 void FClaudeCodeRunner::ExecuteProcess()
@@ -1274,15 +1219,8 @@ void FClaudeCodeRunner::ExecuteProcess()
 	{
 		CleanupHandles();
 
-		FString ErrorMsg = FString::Printf(
-			TEXT("Failed to start provider process.\n\n")
-			TEXT("Provider Path: %s\n")
-			TEXT("Working Dir: %s\n\n")
-			TEXT("Command (truncated): %.200s..."),
-			*ProviderPath,
-			*WorkingDir,
-			*CommandLine
-		);
+		FString ErrorMsg =
+			FString::Printf(TEXT("Failed to start provider process.\n\n") TEXT("Provider Path: %s\n") TEXT("Working Dir: %s\n\n") TEXT("Command (truncated): %.200s..."), *ProviderPath, *WorkingDir, *CommandLine);
 		ReportError(ErrorMsg);
 		return;
 	}
@@ -1317,10 +1255,9 @@ void FClaudeCodeRunner::ExecuteProcess()
 		{
 			FTCHARToUTF8 Utf8Payload(*StdinPayload);
 			int32 BytesWritten = 0;
-			bool bWritten = FPlatformProcess::WritePipe(StdInWritePipe, (const uint8*)Utf8Payload.Get(), Utf8Payload.Length(), &BytesWritten);
-			UE_LOG(LogUnrealAICLI, Log, TEXT("Wrote to provider stdin (stream-json, success=%d, %d/%d bytes, images: %d, system: %d chars, user: %d chars)"),
-				bWritten, BytesWritten, Utf8Payload.Length(), CurrentConfig.AttachedImagePaths.Num(),
-				CurrentConfig.SystemPrompt.Len(), CurrentConfig.Prompt.Len());
+			bool bWritten = FPlatformProcess::WritePipe(StdInWritePipe, (const uint8*) Utf8Payload.Get(), Utf8Payload.Length(), &BytesWritten);
+			UE_LOG(LogUnrealAICLI, Log, TEXT("Wrote to provider stdin (stream-json, success=%d, %d/%d bytes, images: %d, system: %d chars, user: %d chars)"), bWritten, BytesWritten, Utf8Payload.Length(),
+				CurrentConfig.AttachedImagePaths.Num(), CurrentConfig.SystemPrompt.Len(), CurrentConfig.Prompt.Len());
 		}
 
 		// Close stdin write pipe to signal EOF to Claude
@@ -1344,8 +1281,7 @@ void FClaudeCodeRunner::ExecuteProcess()
 	{
 		// Fallback: try legacy parsing in case NDJSON format wasn't as expected
 		ResponseText = ParseStreamJsonOutput(FullOutput);
-		UE_LOG(LogUnrealAICLI, Log, TEXT("NDJSON parser produced no text, fell back to legacy parser (%d chars)"),
-			ResponseText.Len());
+		UE_LOG(LogUnrealAICLI, Log, TEXT("NDJSON parser produced no text, fell back to legacy parser (%d chars)"), ResponseText.Len());
 	}
 
 	// Get exit code
@@ -1367,14 +1303,3 @@ void FClaudeCodeRunner::ExecuteProcess()
 }
 
 // FClaudeCodeSubsystem is now in ClaudeSubsystem.cpp
-
-
-
-
-
-
-
-
-
-
-

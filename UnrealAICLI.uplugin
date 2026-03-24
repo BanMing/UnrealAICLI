@@ -10,7 +10,7 @@
 	"DocsURL": "https://github.com/Natfii/UnrealAICLI",
 	"MarketplaceURL": "",
 	"SupportURL": "https://github.com/Natfii/UnrealAICLI/issues",
-	"EngineVersion": "5.3.0",
+	"EngineVersion": "5.7.0",
 	"CanContainContent": false,
 	"Installed": true,
 	"SupportedTargetPlatforms": [
