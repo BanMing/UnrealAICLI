@@ -32,18 +32,30 @@ bool FUnrealAICLIMCPServer::Start(uint32 Port)
 		return true;
 	}
 
+	// Commandlets (HotPatcher/Cook/Build pipelines) do not require MCP HTTP endpoints.
+	// Starting a listener in this mode can fail when port 3000 is already occupied,
+	// which would pollute commandlet logs with error-level messages and fail CI gates.
+	// We therefore short-circuit startup here to keep packaging deterministic.
+	if (IsRunningCommandlet())
+	{
+		UE_LOG(LogUnrealAICLI, Display, TEXT("Skipping MCP server startup in commandlet mode."));
+		return true;
+	}
+
 	ServerPort = Port;
 
 	// Get or start the HTTP server module.
 	FHttpServerModule& HttpServerModule = FHttpServerModule::Get();
 
-	// Enable listener startup, then request a router with fail-on-bind behavior.
+	// Enable listener startup, then request a router.
+	// Use non-failing bind behavior so the editor can continue even if the default
+	// port is occupied by another local process.
 	HttpServerModule.StartAllListeners();
-	HttpRouter = HttpServerModule.GetHttpRouter(ServerPort, true);
+	HttpRouter = HttpServerModule.GetHttpRouter(ServerPort, false);
 	if (!HttpRouter.IsValid())
 	{
-		UE_LOG(LogUnrealAICLI, Error, TEXT("Failed to bind MCP listener on 127.0.0.1:%d"), ServerPort);
-		return false;
+		UE_LOG(LogUnrealAICLI, Warning, TEXT("MCP listener unavailable on 127.0.0.1:%d. MCP tools disabled for this session."), ServerPort);
+		return true;
 	}
 
 	// Setup routes after listener is confirmed bindable.
@@ -111,30 +123,28 @@ void FUnrealAICLIMCPServer::SetupRoutes()
 	ListToolsHandle = HttpRouter->BindRoute(
 		FHttpPath(TEXT("/mcp/tools")),
 		EHttpServerRequestVerbs::VERB_GET,
-		[this](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
-		{
-			return HandleListTools(Request, OnComplete);
-		}
+		// Use CreateRaw to bind a stable member-function delegate that exactly matches
+		// FHttpRequestHandler in UE5.7. This avoids lambda conversion edge cases across
+		// engine minor updates and keeps the route binding ABI-compatible.
+		FHttpRequestHandler::CreateRaw(this, &FUnrealAICLIMCPServer::HandleListTools)
 	);
 
 	// POST /mcp/tool/* - Execute a tool (wildcard path)
 	ExecuteToolHandle = HttpRouter->BindRoute(
 		FHttpPath(TEXT("/mcp/tool")),
 		EHttpServerRequestVerbs::VERB_POST,
-		[this](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
-		{
-			return HandleExecuteTool(Request, OnComplete);
-		}
+		// Bind as member function for the same reason as above: deterministic delegate
+		// type conversion for HttpServer's request handler signature.
+		FHttpRequestHandler::CreateRaw(this, &FUnrealAICLIMCPServer::HandleExecuteTool)
 	);
 
 	// GET /mcp/status - Server status
 	StatusHandle = HttpRouter->BindRoute(
 		FHttpPath(TEXT("/mcp/status")),
 		EHttpServerRequestVerbs::VERB_GET,
-		[this](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
-		{
-			return HandleStatus(Request, OnComplete);
-		}
+		// Keep route registration style consistent across endpoints to reduce maintenance
+		// risk when upgrading HTTPServer internals.
+		FHttpRequestHandler::CreateRaw(this, &FUnrealAICLIMCPServer::HandleStatus)
 	);
 }
 
