@@ -41,6 +41,31 @@ FString FBlueprintUtils::GetBlueprintTypeString(EBlueprintType Type)
 	}
 }
 
+/**
+ * Convert Blueprint compile status enum to a stable string used by MCP payloads.
+ * Keeping the string mapping centralized avoids drift between different tools.
+ */
+static FString GetBlueprintCompileStatusString(EBlueprintStatus Status)
+{
+	switch (Status)
+	{
+	case BS_Unknown:
+		return TEXT("Unknown");
+	case BS_Dirty:
+		return TEXT("Dirty");
+	case BS_Error:
+		return TEXT("Error");
+	case BS_UpToDate:
+		return TEXT("UpToDate");
+	case BS_BeingCreated:
+		return TEXT("BeingCreated");
+	case BS_UpToDateWithWarnings:
+		return TEXT("UpToDateWithWarnings");
+	default:
+		return TEXT("Unknown");
+	}
+}
+
 TSharedPtr<FJsonObject> FBlueprintUtils::SerializeBlueprintInfo(
 	UBlueprint* Blueprint,
 	bool bIncludeVariables,
@@ -58,6 +83,7 @@ TSharedPtr<FJsonObject> FBlueprintUtils::SerializeBlueprintInfo(
 	Result->SetStringField(TEXT("name"), Blueprint->GetName());
 	Result->SetStringField(TEXT("path"), Blueprint->GetPathName());
 	Result->SetStringField(TEXT("blueprint_type"), GetBlueprintTypeString(Blueprint->BlueprintType));
+	Result->SetStringField(TEXT("compile_status"), GetBlueprintCompileStatusString(Blueprint->Status));
 
 	// Parent class
 	if (Blueprint->ParentClass)
