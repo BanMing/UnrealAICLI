@@ -31,9 +31,13 @@ FMCPToolResult FMCPTool_BlueprintQuery::Execute(const TSharedRef<FJsonObject>& P
 	{
 		return ExecuteGetGraph(Params);
 	}
+	else if (Operation == TEXT("get_function_nodes"))
+	{
+		return ExecuteGetFunctionNodes(Params);
+	}
 
 	return FMCPToolResult::Error(FString::Printf(
-		TEXT("Unknown operation: '%s'. Valid operations: 'list', 'inspect', 'get_graph'"), *Operation));
+		TEXT("Unknown operation: '%s'. Valid operations: 'list', 'inspect', 'get_graph', 'get_function_nodes'"), *Operation));
 }
 
 FMCPToolResult FMCPTool_BlueprintQuery::ExecuteList(const TSharedRef<FJsonObject>& Params)
@@ -207,6 +211,60 @@ FMCPToolResult FMCPTool_BlueprintQuery::ExecuteInspect(const TSharedRef<FJsonObj
 	return FMCPToolResult::Success(
 		FString::Printf(TEXT("Blueprint info for: %s"), *Blueprint->GetName()),
 		BlueprintInfo
+	);
+}
+
+FMCPToolResult FMCPTool_BlueprintQuery::ExecuteGetFunctionNodes(const TSharedRef<FJsonObject>& Params)
+{
+	// Get Blueprint path
+	FString BlueprintPath;
+	TOptional<FMCPToolResult> Error;
+	if (!ExtractRequiredString(Params, TEXT("blueprint_path"), BlueprintPath, Error))
+	{
+		return Error.GetValue();
+	}
+
+	// Validate path
+	FString ValidationError;
+	if (!FMCPParamValidator::ValidateBlueprintPath(BlueprintPath, ValidationError))
+	{
+		return FMCPToolResult::Error(ValidationError);
+	}
+
+	// Load Blueprint
+	FString LoadError;
+	UBlueprint* Blueprint = FBlueprintUtils::LoadBlueprint(BlueprintPath, LoadError);
+	if (!Blueprint)
+	{
+		return FMCPToolResult::Error(LoadError);
+	}
+
+	// Get graph name and graph type flag
+	FString GraphName = ExtractOptionalString(Params, TEXT("graph_name"), TEXT(""));
+	bool bFunctionGraph = ExtractOptionalBool(Params, TEXT("is_function_graph"), true);
+
+	// Find the requested graph
+	FString GraphError;
+	UEdGraph* Graph = FBlueprintGraphEditor::FindGraph(Blueprint, GraphName, bFunctionGraph, GraphError);
+	if (!Graph)
+	{
+		return FMCPToolResult::Error(GraphError);
+	}
+
+	// Serialize all nodes with full pin/connection detail.
+	// SerializeAllNodes assigns temporary IDs internally so pre-existing nodes
+	// are referenceable by subsequent modify operations.
+	TSharedPtr<FJsonObject> GraphData = FBlueprintGraphEditor::SerializeAllNodes(Graph);
+
+	// Attach context fields so callers can identify the source
+	GraphData->SetStringField(TEXT("blueprint_name"), Blueprint->GetName());
+	GraphData->SetStringField(TEXT("blueprint_path"), Blueprint->GetPathName());
+	GraphData->SetStringField(TEXT("graph_name"), Graph->GetName());
+
+	return FMCPToolResult::Success(
+		FString::Printf(TEXT("Function graph '%s': %d nodes"), *Graph->GetName(),
+			(int32)GraphData->GetNumberField(TEXT("node_count"))),
+		GraphData
 	);
 }
 

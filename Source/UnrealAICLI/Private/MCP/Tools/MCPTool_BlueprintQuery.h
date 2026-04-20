@@ -12,6 +12,7 @@
  *   - list: List all Blueprints in project (with optional filters)
  *   - inspect: Get detailed Blueprint info (variables, functions, parent class)
  *   - get_graph: Get graph information (node count, events)
+ *   - get_function_nodes: Get all nodes in a function graph with full detail
  */
 class FMCPTool_BlueprintQuery : public FMCPToolBase
 {
@@ -25,7 +26,8 @@ public:
 			"Operations:\n"
 			"- 'list': Find Blueprints in project with optional filters\n"
 			"- 'inspect': Get detailed Blueprint info (variables, functions, parent class)\n"
-			"- 'get_graph': Get graph structure (node count, events, connections)\n\n"
+			"- 'get_graph': Get graph structure (node count, events, connections)\n"
+			"- 'get_function_nodes': Get all nodes in a function graph with full pin/connection detail\n\n"
 			"Use 'list' first to discover Blueprints, then 'inspect' or 'get_graph' for details.\n\n"
 			"Example paths:\n"
 			"- '/Game/Blueprints/BP_Character'\n"
@@ -35,7 +37,7 @@ public:
 		);
 		Info.Parameters = {
 			FMCPToolParameter(TEXT("operation"), TEXT("string"),
-				TEXT("Operation: 'list', 'inspect', or 'get_graph'"), true),
+				TEXT("Operation: 'list', 'inspect', 'get_graph', or 'get_function_nodes'"), true),
 			FMCPToolParameter(TEXT("path_filter"), TEXT("string"),
 				TEXT("Path prefix filter (e.g., '/Game/Blueprints/')"), false, TEXT("/Game/")),
 			FMCPToolParameter(TEXT("type_filter"), TEXT("string"),
@@ -51,7 +53,11 @@ public:
 			FMCPToolParameter(TEXT("include_functions"), TEXT("boolean"),
 				TEXT("Include function list in inspect result (default: false)"), false, TEXT("false")),
 			FMCPToolParameter(TEXT("include_graphs"), TEXT("boolean"),
-				TEXT("Include graph info in inspect result"), false, TEXT("false"))
+				TEXT("Include graph info in inspect result"), false, TEXT("false")),
+			FMCPToolParameter(TEXT("graph_name"), TEXT("string"),
+				TEXT("Function graph name (required for get_function_nodes)"), false),
+			FMCPToolParameter(TEXT("is_function_graph"), TEXT("boolean"),
+				TEXT("True to target function graphs"), false, TEXT("true"))
 		};
 		Info.Annotations = FMCPToolAnnotations::ReadOnly();
 		return Info;
@@ -68,4 +74,7 @@ private:
 
 	/** Get graph information */
 	FMCPToolResult ExecuteGetGraph(const TSharedRef<FJsonObject>& Params);
+
+	/** Get all nodes in a function graph with full pin/connection detail */
+	FMCPToolResult ExecuteGetFunctionNodes(const TSharedRef<FJsonObject>& Params);
 };
