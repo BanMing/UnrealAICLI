@@ -769,6 +769,6 @@ FString FScriptExecutionManager::GetCppScriptDirectory() const
 
 FString FScriptExecutionManager::GetContentScriptDirectory() const
 {
-	// Content/UnrealAICLI/Scripts/
-	return FPaths::Combine(FPaths::ProjectContentDir(), TEXT("UnrealAICLI"), TEXT("Scripts"));
+	// [ProjectDir]/Scripts/UnrealAICLI/ — keep temp scripts out of Content/
+	return FPaths::Combine(FPaths::ProjectDir(), TEXT("Scripts"), TEXT("UnrealAICLI"));
 }
