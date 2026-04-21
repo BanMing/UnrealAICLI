@@ -16,6 +16,8 @@
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetArrayLibrary.h"
 #include "Kismet/KismetStringLibrary.h"
+#include "Kismet/BlueprintFunctionLibrary.h"
+#include "UObject/UObjectIterator.h"
 #include "HAL/PlatformAtomics.h"
 #include "K2Node_FunctionResult.h"
 #include "EdGraphUtilities.h"
@@ -223,6 +225,17 @@ UEdGraphNode* FBlueprintGraphEditor::FindNodeById(UEdGraph* Graph, const FString
 		}
 	}
 
+	// Fallback: match by UObject name (e.g., "K2Node_Event_0") for pre-existing nodes without MCP IDs.
+	// This allows connect_pins/disconnect_pins to reference original Blueprint nodes
+	// that were not created by MCP (e.g., Event Tick, Event BeginPlay).
+	for (UEdGraphNode* Node : Graph->Nodes)
+	{
+		if (Node && Node->GetName() == NodeId)
+		{
+			return Node;
+		}
+	}
+
 	return nullptr;
 }
 
@@ -312,20 +325,23 @@ bool FBlueprintGraphEditor::ConnectPins(
 		}
 	}
 
-	// Check if connection is valid
+	// Use TryCreateConnection instead of raw MakeLinkTo.
+	// TryCreateConnection handles CONNECT_RESPONSE_BREAK_OTHERS automatically,
+	// which is required for exec pins (only one outgoing exec link allowed).
+	// Without this, connecting a new exec target would leave stale old links.
 	const UEdGraphSchema* Schema = Graph->GetSchema();
 	if (Schema)
 	{
-		FPinConnectionResponse Response = Schema->CanCreateConnection(SourcePin, TargetPin);
-		if (Response.Response == CONNECT_RESPONSE_DISALLOW)
+		if (!Schema->TryCreateConnection(SourcePin, TargetPin))
 		{
-			OutError = FString::Printf(TEXT("Cannot connect pins: %s"), *Response.Message.ToString());
+			OutError = FString::Printf(TEXT("Cannot connect pins: schema rejected the connection"));
 			return false;
 		}
 	}
-
-	// Make the connection
-	SourcePin->MakeLinkTo(TargetPin);
+	else
+	{
+		SourcePin->MakeLinkTo(TargetPin);
+	}
 
 	UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
 	if (Blueprint)
@@ -951,7 +967,8 @@ UEdGraphNode* FBlueprintGraphEditor::CreateCallFunctionNode(
 		return nullptr;
 	}
 
-	// Find the function
+	// Enhanced function lookup: supports project BlueprintFunctionLibrary subclasses,
+	// Blueprint self-context functions, and the original hardcoded engine libraries.
 	UFunction* Function = nullptr;
 	UClass* FunctionOwner = nullptr;
 
@@ -997,6 +1014,11 @@ UEdGraphNode* FBlueprintGraphEditor::CreateCallFunctionNode(
 				// Search by short class name across native (faster) packages first
 				FunctionOwner = FindFirstObject<UClass>(*TargetClass, EFindFirstObjectOptions::NativeFirst);
 			}
+			// If NativeFirst missed a project class, retry without the native bias
+			if (!FunctionOwner)
+			{
+				FunctionOwner = FindFirstObject<UClass>(*TargetClass, EFindFirstObjectOptions::None);
+			}
 		}
 	}
 	else
@@ -1030,6 +1052,40 @@ UEdGraphNode* FBlueprintGraphEditor::CreateCallFunctionNode(
 	if (!Function)
 	{
 		Function = UKismetStringLibrary::StaticClass()->FindFunctionByName(FName(*FunctionName));
+	}
+
+	// Search the Blueprint's own generated class for self-context functions (e.g., custom BP functions)
+	if (!Function)
+	{
+		if (UBlueprint* OwnerBP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph))
+		{
+			if (UClass* BPClass = OwnerBP->GeneratedClass)
+			{
+				Function = BPClass->FindFunctionByName(FName(*FunctionName));
+			}
+			if (!Function && OwnerBP->SkeletonGeneratedClass)
+			{
+				Function = OwnerBP->SkeletonGeneratedClass->FindFunctionByName(FName(*FunctionName));
+			}
+		}
+	}
+
+	// Search all loaded BlueprintFunctionLibrary subclasses for the function
+	if (!Function)
+	{
+		for (TObjectIterator<UClass> ClassIt; ClassIt; ++ClassIt)
+		{
+			UClass* TestClass = *ClassIt;
+			if (TestClass->IsChildOf(UBlueprintFunctionLibrary::StaticClass())
+				&& !TestClass->HasAnyClassFlags(CLASS_Abstract | CLASS_Deprecated | CLASS_NewerVersionExists))
+			{
+				Function = TestClass->FindFunctionByName(FName(*FunctionName));
+				if (Function)
+				{
+					break;
+				}
+			}
+		}
 	}
 
 	if (!Function)
