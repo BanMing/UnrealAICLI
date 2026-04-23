@@ -11,6 +11,7 @@
 #include "Materials/MaterialInstanceConstant.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Engine/SkeletalMesh.h"
+#include "Engine/SkinnedAssetCommon.h"
 #include "Engine/Texture.h"
 #include "Engine/Texture2D.h"
 #include "Components/MeshComponent.h"

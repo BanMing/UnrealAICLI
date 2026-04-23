@@ -12,6 +12,7 @@
 #include "Misc/PackageName.h"
 #include "UObject/PropertyAccessUtil.h"
 #include "Engine/SkeletalMesh.h"
+#include "Engine/SkinnedAssetCommon.h"
 #include "Dom/JsonValue.h"
 
 FMCPToolInfo FMCPTool_Asset::GetInfo() const

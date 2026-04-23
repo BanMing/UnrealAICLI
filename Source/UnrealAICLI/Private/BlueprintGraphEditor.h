@@ -195,8 +195,9 @@ public:
 	static void AssignTemporaryIds(UEdGraph* Graph);
 
 	/**
-	 * Serialize all nodes in a graph with full pin/connection detail
-	 * Calls AssignTemporaryIds internally
+	 * Serialize all nodes in a graph with full pin/connection detail.
+	 * Read-only: does not modify the graph. Node IDs in the output fall back to
+	 * the node's UObject name when no MCP_ID has been assigned by a prior modify op.
 	 * @param Graph - Graph to serialize
 	 * @return JSON with node_count, nodes array, and connections array
 	 */
@@ -264,6 +265,16 @@ public:
 	 * @return Node ID or empty string
 	 */
 	static FString GetNodeId(UEdGraphNode* Node);
+
+	/**
+	 * Read-only ID resolver. Returns the stored MCP_ID if present, otherwise
+	 * falls back to the node's UObject name (e.g., "K2Node_Event_0"). Used by
+	 * serialize paths so pre-existing nodes can be referenced without writing
+	 * to Node->NodeComment. FindNodeById already resolves UObject-name IDs.
+	 * @param Node - Node to query
+	 * @return Stable ID string suitable for FindNodeById
+	 */
+	static FString GetNodeIdOrName(UEdGraphNode* Node);
 
 private:
 	// Thread-safe counter for unique IDs

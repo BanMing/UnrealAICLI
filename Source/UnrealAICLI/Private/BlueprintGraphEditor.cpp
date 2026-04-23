@@ -519,7 +519,10 @@ TSharedPtr<FJsonObject> FBlueprintGraphEditor::SerializeNodeInfo(UEdGraphNode* N
 		return NodeObj;
 	}
 
-	NodeObj->SetStringField(TEXT("node_id"), GetNodeId(Node));
+	// Use GetNodeIdOrName so read-only callers (SerializeAllNodes) return a
+	// resolvable ID for nodes never touched by a modify op, without mutating
+	// NodeComment. Modify callers that just assigned an MCP_ID still get it back.
+	NodeObj->SetStringField(TEXT("node_id"), GetNodeIdOrName(Node));
 	NodeObj->SetStringField(TEXT("class"), Node->GetClass()->GetName());
 	NodeObj->SetNumberField(TEXT("pos_x"), Node->NodePosX);
 	NodeObj->SetNumberField(TEXT("pos_y"), Node->NodePosY);
@@ -675,8 +678,9 @@ TSharedPtr<FJsonObject> FBlueprintGraphEditor::SerializeAllNodes(UEdGraph* Graph
 		return Result;
 	}
 
-	// Ensure all nodes have MCP IDs
-	AssignTemporaryIds(Graph);
+	// Read-only serialization: no longer calls AssignTemporaryIds (which writes
+	// to Node->NodeComment). IDs fall back to UObject names for nodes that have
+	// no pre-existing MCP_ID, which FindNodeById already resolves.
 
 	// Serialize each node
 	TArray<TSharedPtr<FJsonValue>> NodesArray;
@@ -699,7 +703,7 @@ TSharedPtr<FJsonObject> FBlueprintGraphEditor::SerializeAllNodes(UEdGraph* Graph
 			continue;
 		}
 
-		FString SourceNodeId = GetNodeId(Node);
+		FString SourceNodeId = GetNodeIdOrName(Node);
 		for (UEdGraphPin* Pin : Node->Pins)
 		{
 			if (!Pin || Pin->Direction != EGPD_Output)
@@ -714,7 +718,7 @@ TSharedPtr<FJsonObject> FBlueprintGraphEditor::SerializeAllNodes(UEdGraph* Graph
 					continue;
 				}
 
-				FString TargetNodeId = GetNodeId(LinkedPin->GetOwningNode());
+				FString TargetNodeId = GetNodeIdOrName(LinkedPin->GetOwningNode());
 
 				TSharedPtr<FJsonObject> ConnObj = MakeShared<FJsonObject>();
 				ConnObj->SetStringField(TEXT("source_node_id"), SourceNodeId);
@@ -951,6 +955,25 @@ FString FBlueprintGraphEditor::GetNodeId(UEdGraphNode* Node)
 	return FString();
 }
 
+FString FBlueprintGraphEditor::GetNodeIdOrName(UEdGraphNode* Node)
+{
+	if (!Node)
+	{
+		return FString();
+	}
+
+	// Prefer an MCP_ID previously written by a modify op.
+	const FString McpId = GetNodeId(Node);
+	if (!McpId.IsEmpty())
+	{
+		return McpId;
+	}
+
+	// Fallback: the UObject name. Stable for a live node and accepted by the
+	// existing FindNodeById fallback branch, so callers can still resolve it.
+	return Node->GetName();
+}
+
 // ===== Private Node Creation Helpers =====
 
 UEdGraphNode* FBlueprintGraphEditor::CreateCallFunctionNode(
@@ -1032,7 +1055,6 @@ UEdGraphNode* FBlueprintGraphEditor::CreateCallFunctionNode(
 		Function = FunctionOwner->FindFunctionByName(FName(*FunctionName));
 	}
 
-	// If not found in the resolved owner class, search common libraries as fallbacks
 	if (!Function)
 	{
 		Function = UKismetSystemLibrary::StaticClass()->FindFunctionByName(FName(*FunctionName));

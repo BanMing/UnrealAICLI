@@ -23,6 +23,7 @@ export const SIMPLE_TOOL_NAMES = new Set([
   "capture_viewport",
   "get_output_log",
   "blueprint_query",
+  "execute_script",
 ]);
 
 // Hidden tools: callable but never listed
@@ -32,7 +33,6 @@ export const HIDDEN_TOOL_NAMES = new Set([
   "task_result",
   "task_list",
   "task_cancel",
-  "execute_script",
   "cleanup_scripts",
   "get_script_history",
   "run_console_command",

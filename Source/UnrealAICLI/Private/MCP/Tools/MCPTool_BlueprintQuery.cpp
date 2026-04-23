@@ -251,9 +251,10 @@ FMCPToolResult FMCPTool_BlueprintQuery::ExecuteGetFunctionNodes(const TSharedRef
 		return FMCPToolResult::Error(GraphError);
 	}
 
-	// Serialize all nodes with full pin/connection detail.
-	// SerializeAllNodes assigns temporary IDs internally so pre-existing nodes
-	// are referenceable by subsequent modify operations.
+	// Serialize all nodes with full pin/connection detail. Read-only: the
+	// returned node_ids are either the MCP_ID set by a prior modify op or the
+	// node's UObject name as a stable fallback. FindNodeById resolves both
+	// forms, so subsequent modify calls can reference these IDs.
 	TSharedPtr<FJsonObject> GraphData = FBlueprintGraphEditor::SerializeAllNodes(Graph);
 
 	// Attach context fields so callers can identify the source

@@ -221,7 +221,7 @@ bool FMCPTool_SetProperty::SetNumericPropertyValue(FNumericProperty* NumProp, vo
 			NumProp->SetFloatingPointPropertyValue(ValuePtr, DoubleVal);
 			return true;
 		}
-		// Fallback: coerce string "42.5" â†?double
+		// Fallback: coerce string "42.5" â†’ double
 		FString StrVal;
 		if (Value->TryGetString(StrVal) && StrVal.IsNumeric())
 		{
@@ -237,7 +237,7 @@ bool FMCPTool_SetProperty::SetNumericPropertyValue(FNumericProperty* NumProp, vo
 			NumProp->SetIntPropertyValue(ValuePtr, IntVal);
 			return true;
 		}
-		// Fallback: coerce string "42" â†?int64
+		// Fallback: coerce string "42" â†’ int64
 		FString StrVal;
 		if (Value->TryGetString(StrVal) && StrVal.IsNumeric())
 		{
@@ -485,7 +485,7 @@ bool FMCPTool_SetProperty::SetPropertyFromJson(UObject* Object, const FString& P
 		}
 		else
 		{
-			// Fallback: coerce string "true"/"false"/"1"/"0" â†?bool
+			// Fallback: coerce string "true"/"false"/"1"/"0" â†’ bool
 			FString StrVal;
 			if (Value->TryGetString(StrVal))
 			{

@@ -61,10 +61,10 @@ bool FClipboardImageUtils::ClipboardHasImage()
 	int32 ReturnCode = -1;
 	FString StdOut, StdErr;
 
-	// Call osascript directly �?/bin/sh wrapper mangles quote parsing on macOS
+	// Call osascript directly — /bin/sh wrapper mangles quote parsing on macOS
 	if (FPlatformProcess::ExecProcess(TEXT("/usr/bin/osascript"), TEXT("-e \"clipboard info\""), &ReturnCode, &StdOut, &StdErr) && ReturnCode == 0)
 	{
-		// Match on ASCII-safe substrings �?osascript output uses guillemets (e.g. «class PNGf»)
+		// Match on ASCII-safe substrings — osascript output uses guillemets (e.g. «class PNGf»)
 		// which have encoding issues in TEXT() macros, so we match the class name only
 		if (StdOut.Contains(TEXT("PNGf")) || StdOut.Contains(TEXT("TIFF")))
 		{
@@ -313,7 +313,7 @@ bool FClipboardImageUtils::SaveClipboardImageToFile(FString& OutFilePath, const 
 
 	if (FFileHelper::SaveArrayToFile(ScriptBytes, *ScriptPath))
 	{
-		// Call osascript directly on the script file �?no shell wrapper needed
+		// Call osascript directly on the script file — no shell wrapper needed
 		if (FPlatformProcess::ExecProcess(TEXT("/usr/bin/osascript"), *ScriptPath, &ReturnCode, &StdOut, &StdErr) && ReturnCode == 0)
 		{
 			IFileManager::Get().Delete(*ScriptPath);
